@@ -132,11 +132,19 @@
 
 ## Your Development Log
 
-### Entry 1 - [Date and Time]
+### Entry 1 - [November 12, 2026, 5:30 PM]
 **What I did**:
-
+I examined the initial starter software and examined its synchronization issues.
 **Details**:
+I reviewed the main classes, including ReadyQueue, SharedStats, and CpuWorker.
 
+I checked my student ID configuration.
+
+I ran the original starter program before modifying the source code.
+
+I saved the original console output for comparison with the corrected implementation.
+
+I identified incorrect statistics, repeated process selection, and busy waiting.
 **Challenges**:
 
 **Solution**:
@@ -240,7 +248,7 @@
 
 **Your Answer:** *(5-7 sentences)*
 
-[Write your answer here.]
+[I ran the original starter to identify its synchronization problems and save the original output. This output provides evidence of the race conditions and busy waiting. It also allows me to compare the original behavior with the corrected implementation.]
 
 ## Question 2: What was the most challenging part of this assignment?
 
@@ -248,7 +256,7 @@
 
 **Your Answer:** *(5-7 sentences)*
 
-[Write your answer here.]
+[The ready queue race condition can cause multiple CPUs to select the same process. This can produce exceptions and hide other synchronization problems. Therefore, I fixed the ready queue first, as required by the assignment instructions.]
 
 ## Question 3: How did you overcome the challenges you faced?
 
@@ -256,7 +264,7 @@
 
 **Your Answer:** *(5-7 sentences)*
 
-[Write your answer here.]
+[Separate commits provide a clear development history. Each commit represents one meaningful feature or documentation stage. This also makes it easier to review and identify changes.]
 
 ## Question 4: Where can synchronization concepts be applied in real-world applications?
 

@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.Random;
+import java.util.concurrent.Semaphore;
 // TODO (Feature 1 and Feature 2): import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantLock;
 // TODO (Feature 3):               import java.util.concurrent.Semaphore;
@@ -74,43 +75,78 @@ class SharedStats {
     // above here.
     // Think about it: ONE lock for the three variables, or ONE lock PER variable?
     // (you must justify it in MY_WORK.md)
+    // Protect each independent statistics variable with its own lock
+    private static final ReentrantLock contextSwitchLock = new ReentrantLock();
+    private static final ReentrantLock completedProcessLock = new ReentrantLock();
+    private static final ReentrantLock serviceTimeLock = new ReentrantLock();
 
     public static void incrementContextSwitch() {
         // TODO Feature 2: protect this critical section
-        int tmp = contextSwitchCount; // 1) read
-        RaceWindow.pause(); // <- another thread can read the SAME value here
-        contextSwitchCount = tmp + 1; // 2) write (one increment is lost if someone else did the same)
+        contextSwitchLock.lock();
+        try {
+            int tmp = contextSwitchCount; // 1) read
+            RaceWindow.pause(); // <- another thread can read the SAME value here
+            contextSwitchCount = tmp + 1; // 2) write (one increment is lost if someone else did the same)
+        } finally {
+            contextSwitchLock.unlock();
+        }
+
     }
 
     public static void incrementCompletedProcess() {
         // TODO Feature 2: protect this critical section
-        int tmp = completedProcessCount;
-        RaceWindow.pause();
-        completedProcessCount = tmp + 1;
+        completedProcessLock.lock();
+        try {
+            int tmp = completedProcessCount;
+            RaceWindow.pause();
+            completedProcessCount = tmp + 1;
+        } finally {
+            completedProcessLock.unlock();
+        }
     }
 
     public static void addServiceTime(int ms) {
         // TODO Feature 2: protect this critical section
-        long tmp = totalServiceTime;
-        RaceWindow.pause();
-        totalServiceTime = tmp + ms;
+        serviceTimeLock.lock();
+        try {
+            long tmp = totalServiceTime;
+            RaceWindow.pause();
+            totalServiceTime = tmp + ms;
+        } finally {
+            serviceTimeLock.unlock();
+        }
     }
 
     // Readers must also be protected (a read in the middle of an update is not safe
     // either)
     public static int getCompletedProcessCount() {
         // TODO Feature 2: protect this read
-        return completedProcessCount;
+        completedProcessLock.lock();
+        try {
+            return completedProcessCount;
+        } finally {
+            completedProcessLock.unlock();
+        }
     }
 
     public static int getContextSwitchCount() {
         // TODO Feature 2: protect this read
-        return contextSwitchCount;
+        contextSwitchLock.lock();
+        try {
+            return contextSwitchCount;
+        } finally {
+            contextSwitchLock.unlock();
+        }
     }
 
     public static long getTotalServiceTime() {
         // TODO Feature 2: protect this read
-        return totalServiceTime;
+        serviceTimeLock.lock();
+        try {
+            return totalServiceTime;
+        } finally {
+            serviceTimeLock.unlock();
+        }
     }
 }
 
@@ -126,6 +162,11 @@ class ReadyQueue {
 
     private final ReentrantLock queueLock = new ReentrantLock(); // Protecting process map and queue list
     // TODO Feature 3: declare the counting semaphore that counts the processes
+
+    private final Semaphore availableProcesses = new Semaphore(0); // Count the processes currently available in the
+                                                                   // ready queue
+
+    private boolean shutdownSignaled = false; // Prevent more than one CPU from sending shutdown signals
     // waiting in the ready queue here
 
     // Add a process to the ready queue (new process, or a process that did not
@@ -141,6 +182,7 @@ class ReadyQueue {
             queueLock.unlock();
         }
         // TODO Feature 3: signal that one more process is available in the queue
+        availableProcesses.release();
 
         System.out.println(Colors.BLUE + "  ➕ " + Colors.BOLD + Colors.CYAN + process.getName() + Colors.RESET +
                 Colors.BLUE + " (Priority: " + process.getPriority() + ") added to ready queue" + Colors.RESET +
@@ -180,18 +222,36 @@ class ReadyQueue {
     // ready queue)
     public String snapshot() {
         // TODO Feature 1: protect this critical sections
-         queueLock.lock();
-    try {
-        StringBuilder sb = new StringBuilder();
-        for (Thread t : list) {
-            if (sb.length() > 0)
-                sb.append(" → ");
-            sb.append(map.get(t).getName());
+        queueLock.lock();
+        try {
+            StringBuilder sb = new StringBuilder();
+            for (Thread t : list) {
+                if (sb.length() > 0)
+                    sb.append(" → ");
+                sb.append(map.get(t).getName());
+            }
+            return sb.length() == 0 ? "empty" : sb.toString();
+        } finally {
+            queueLock.unlock();
         }
-        return sb.length() == 0 ? "empty" : sb.toString();
-    } finally {
-        queueLock.unlock();
     }
+
+    // Wait until a process is available or a shutdown signal is received
+    public void acquireProcessPermit() throws InterruptedException {
+        availableProcesses.acquire();
+    }
+
+    // Wake all CPU workers exactly once after every process has completed
+    public void signalShutdown() {
+        queueLock.lock();
+        try {
+            if (!shutdownSignaled) {
+                shutdownSignaled = true;
+                availableProcesses.release(SharedStats.totalCPUs);
+            }
+        } finally {
+            queueLock.unlock();
+        }
     }
 }
 
@@ -320,19 +380,16 @@ class CpuWorker extends Thread {
 
             // TODO Feature 3: replace this polling loop by a blocking wait on the counting
             // semaphore
+            try {
+                readyQueue.acquireProcessPermit();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
             Thread thread = readyQueue.poll();
             if (thread == null) {
-                // ⚠️ BUSY WAITING: the CPU keeps checking an empty queue instead of sleeping
-                // until
-                // a process is available. It wastes CPU time and needs the "completed == total"
-                // test above to stop.
-                SharedStats.busyWaitPolls.incrementAndGet(); // (counted for the verification block)
-                try {
-                    Thread.sleep(20);
-                } catch (InterruptedException e) {
-                    return;
-                }
-                continue;
+                return;
+
             }
 
             Process process = readyQueue.processOf(thread);
@@ -355,6 +412,9 @@ class CpuWorker extends Thread {
             // TODO Feature 3: when the LAST process has completed, wake up the CPUs that
             // are blocked on the
             // semaphore so that they can terminate (otherwise they would wait forever!)
+            if (SharedStats.getCompletedProcessCount() == SharedStats.totalProcesses) {
+                readyQueue.signalShutdown();
+            }
         }
     }
 }
@@ -363,12 +423,7 @@ public class SchedulerSimulationSync {
     public static void main(String[] args) {
         // ⚠️ IMPORTANT: Put your student ID here to seed the random number generator
         // This makes your output unique to you - DO NOT forget to change this!
-<<<<<<< HEAD
         int studentID = 455321478; // ← CHANGE THIS TO YOUR ACTUAL STUDENT ID
-=======
-        int studentID = 455321478;  // ← CHANGE THIS TO YOUR ACTUAL STUDENT ID
->>>>>>> b31720b4d975d31313db079cfe3cf7e3983dc0e8
-
         Random random = new Random(studentID);
 
         // Same random values as Assignment 1 (quantum, number of processes and burst
