@@ -180,6 +180,8 @@ class ReadyQueue {
     // ready queue)
     public String snapshot() {
         // TODO Feature 1: protect this critical sections
+         queueLock.lock();
+    try {
         StringBuilder sb = new StringBuilder();
         for (Thread t : list) {
             if (sb.length() > 0)
@@ -187,6 +189,9 @@ class ReadyQueue {
             sb.append(map.get(t).getName());
         }
         return sb.length() == 0 ? "empty" : sb.toString();
+    } finally {
+        queueLock.unlock();
+    }
     }
 }
 
