@@ -121,10 +121,10 @@ class SharedStats {
 class ReadyQueue {
     private final LinkedList<Thread> list = new LinkedList<>(); // FIFO queue of threads
     private final Map<Thread, Process> map = new HashMap<>(); // thread -> process (same idea as Assignment 1)
-    
+
     // TODO Feature 1: declare the lock protecting `list` and `map` here
-     
-private final ReentrantLock queueLock = new ReentrantLock();  // Protecting  process map and queue list 
+
+    private final ReentrantLock queueLock = new ReentrantLock(); // Protecting process map and queue list
     // TODO Feature 3: declare the counting semaphore that counts the processes
     // waiting in the ready queue here
 
@@ -134,11 +134,11 @@ private final ReentrantLock queueLock = new ReentrantLock();  // Protecting  pro
         // TODO Feature 1: protect this critical section
         Thread thread = new Thread(process);
         queueLock.lock();
-         try {
-        list.add(thread);
-        map.put(thread, process);
+        try {
+            list.add(thread);
+            map.put(thread, process);
         } finally {
-        queueLock.unlock();
+            queueLock.unlock();
         }
         // TODO Feature 3: signal that one more process is available in the queue
 
@@ -152,34 +152,34 @@ private final ReentrantLock queueLock = new ReentrantLock();  // Protecting  pro
     // is empty)
     public Thread poll() {
         // TODO Feature 1: protect this critical section
-         queueLock.lock();
-         try{
-        if (list.isEmpty()) {
-            return null;
+        queueLock.lock();
+        try {
+            if (list.isEmpty()) {
+                return null;
+            }
+            Thread head = list.getFirst(); // 1) read the head of the queue
+            RaceWindow.pause(); // <- another CPU can read the SAME head here
+            list.removeFirst(); // 2) remove the head (it may be a different thread by now!)
+            return head;
+        } finally {
+            queueLock.unlock();
         }
-        Thread head = list.getFirst(); // 1) read the head of the queue
-        RaceWindow.pause(); // <- another CPU can read the SAME head here
-        list.removeFirst(); // 2) remove the head (it may be a different thread by now!)
-        return head;
-    } finally {
-        queueLock.unlock();
-    }
     }
 
     public Process processOf(Thread thread) {
         // TODO Feature 1: protect this access
         queueLock.lock();
-    try {
-        return map.get(thread);
-    } finally {
-        queueLock.unlock();
-    }
+        try {
+            return map.get(thread);
+        } finally {
+            queueLock.unlock();
+        }
     }
 
     // Names of the processes currently waiting in the queue (used to display the
     // ready queue)
     public String snapshot() {
-        // TODO Feature 1: protect this critical section
+        // TODO Feature 1: protect this critical sections
         StringBuilder sb = new StringBuilder();
         for (Thread t : list) {
             if (sb.length() > 0)
@@ -358,7 +358,11 @@ public class SchedulerSimulationSync {
     public static void main(String[] args) {
         // ⚠️ IMPORTANT: Put your student ID here to seed the random number generator
         // This makes your output unique to you - DO NOT forget to change this!
+<<<<<<< HEAD
         int studentID = 455321478; // ← CHANGE THIS TO YOUR ACTUAL STUDENT ID
+=======
+        int studentID = 455321478;  // ← CHANGE THIS TO YOUR ACTUAL STUDENT ID
+>>>>>>> b31720b4d975d31313db079cfe3cf7e3983dc0e8
 
         Random random = new Random(studentID);
 
